@@ -1,0 +1,113 @@
+---
+title: "Practical_Meachine_Learning_Proj"
+author: "Hanna Zhao"
+date: "October 7, 2016"
+output: 
+  html_document: 
+    keep_md: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Background
+
+This is the course project of Cousera Practical Machine Learning class. Personal wearable such as Jawbone Up, Nike FuelBand, and Fitbit generates a large amount of personal activity data. The goal of this study is to use these data to quantify how well the subject performs certain activity. 
+
+The data for this project come from this source:[linked phrase] (http://groupware.les.inf.puc-rio.br/har). Six participants were asked to performa barbell lifts correctly and incorrectly in 5 different ways. This was categoried in the "classe" variable in the training data set. The goal is to predict the manner in 20 cases in the testing data set. 
+
+# Load and Preprocess data
+The training set and testing set can be downloaded from the following link. There are a lot of missing data points in the original data set. Some of them are marked as "NA" and others are just empty. Therefore, "na.string = c("", "NA"")" is used when loading the data. 
+
+```{r load data, cache=TRUE}
+library(caret)
+
+#fileUrl <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+fileDes <- "C:/Users/zhao_h/Documents/R_WD/pml-training.csv"
+
+#download.file(fileUrl, fileDes)
+training <- read.csv(fileDes, na.strings = c("","NA"))
+
+#fileUrl <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+fileDes <- "C:/Users/zhao_h/Documents/R_WD//pml-testing.csv"
+
+#download.file(fileUrl, fileDes)
+testing <- read.csv(fileDes, na.strings = c("","NA"))
+```
+
+In the data cleaning step, I first removed irrelavant columns with more than 90% missing values.  columns. 
+
+```{r Preprocess, cache=TRUE}
+col_mark <- colSums(is.na(training))/dim(training)[1]<0.90
+Pre_training <- training[,col_mark]
+testing <- testing[, col_mark]
+```
+
+Another tricky part is the first column, which is basically row number. Since the training set is sorted by the classe column. See the plot below. There is an artificial correlation between classe and row number, which would confuse the machine learning algorithm. Therefore, it is also removed. 
+```{r plot, cache= TRUE}
+plot(training$X, training$classe)
+```
+```{r remove first column}
+Pre_training <- Pre_training[,-1]
+testing <- testing[, -1]
+```
+
+##Data partition
+Divide training set to two portions for model training and cross validation.
+```{r data partition, cache=TRUE}
+set.seed(333)
+indTrain <- createDataPartition(y = Pre_training$classe, p=0.6, list = FALSE)
+Part_training <-Pre_training[indTrain,]
+Part_testing <-Pre_training[-indTrain,]
+```
+
+##Model training
+Three models were selected to test: decision tree, boosting and random forest. 
+
+```{r model, cache=TRUE, echo=TRUE, message=FALSE, warning = FALSE, results = "hide"}
+t1 <- system.time(mod1<- train(classe ~ ., method = "rpart", data = Part_training))
+
+t2<- system.time(mod2<- train(classe ~ ., method = "gbm", data = Part_training))
+
+t3<- system.time(mod3<- train(classe ~ ., method = "rf", data = Part_training, prox=TRUE, ntree=20))
+```
+
+The comparison is summarized in this table. The first model is the fastest, but accuracy is only 0.46. The second and third model has similar accurancy. Thrid model saves about half of the time.
+
+```{r summary table,cache=TRUE}
+A1 <- confusionMatrix(Part_testing$classe, predict(mod1,Part_testing))[3]$overall[1]
+A2 <- confusionMatrix(Part_testing$classe, predict(mod2,Part_testing))[3]$overall[1]
+A3 <- confusionMatrix(Part_testing$classe, predict(mod3,Part_testing))[3]$overall[1]
+
+summary_table <- data.frame("model"=c("1. decision tree", "2. boosting","3. random forest"),"time"= c(t1[1],t2[1],t3[1]), "accurancy" = c(A1, A2, A3), "Out-of-Sample Error (%)" = c((1-A1)*100,(1-A2)*100,(1-A3)*100))
+ 
+kable(head(summary_table), format = "markdown")
+
+```
+
+```{r model cross validation, cache=TRUE}
+confusionMatrix(Part_testing$classe, predict(mod1,Part_testing))
+
+confusionMatrix(Part_testing$classe, predict(mod2,Part_testing))
+
+confusionMatrix(Part_testing$classe, predict(mod3,Part_testing))
+```
+
+Please note in the third model of random forest, the tree number is set to be limited at 20 in order to save training time. Without this limiation, the default setting takes more than 3.5 hours for model training. Accuracy is 0.999. The evaluation is disabled in knit here to save time.
+
+```{r model2, eval=FALSE}
+t4<- system.time(mod4<- train(classe ~ ., method = "rf", data = Part_training, prox=TRUE))
+confusionMatrix(Part_testing$classe, predict(mod4,Part_testing))
+```
+
+
+##Result
+To balance performance and speed,  model 3 "random forest" with limited tree number (20) is selected as the best model. Out of sample error is 0.14%. 
+
+Finally, let's predict the activity manner in the testing data set. The results from model 2 and model 3 agree with each other very well. it confirmed the previous accuracy number.
+
+```{r result, message=FALSE, warning = FALSE}
+predict(mod2, testing)
+predict(mod3, testing)
+```
